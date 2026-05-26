@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Google Sheets Dynamic Editor",
+  "description": "View and edit Google Sheets dynamically using a shared link.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
