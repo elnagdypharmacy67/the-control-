@@ -1,6 +1,6 @@
 {
-  "name": "Remix: Google Sheets Dynamic Editor",
-  "description": "View and edit Google Sheets dynamically using a shared link.",
+  "name": "Elnagdy Pharmacy",
+  "description": "Premium minimalist web workspace for medical inventory coordination and order parsing.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

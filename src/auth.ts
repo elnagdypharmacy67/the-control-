@@ -13,7 +13,23 @@ provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 // Flag to indicate if we are in the middle of a sign-in flow.
 let isSigningIn = false;
 // Cache the access token in memory and retrieve from storage on startup.
-let cachedAccessToken: string | null = typeof window !== 'undefined' ? localStorage.getItem('google_sheets_access_token') : null;
+let cachedAccessToken: string | null = null;
+
+if (typeof window !== 'undefined') {
+  const token = localStorage.getItem('google_sheets_access_token');
+  const timestampStr = localStorage.getItem('google_sheets_token_timestamp');
+  if (token && timestampStr) {
+    const timestamp = parseInt(timestampStr, 10);
+    // Google OAuth standard tokens expire after 1 hour (3600000ms).
+    // We check against a 50 minutes threshold (3000000ms) for high stability.
+    if (Date.now() - timestamp < 3000000) {
+      cachedAccessToken = token;
+    } else {
+      localStorage.removeItem('google_sheets_access_token');
+      localStorage.removeItem('google_sheets_token_timestamp');
+    }
+  }
+}
 
 // Initialize auth state listener. Call this on app load.
 export const initAuth = (
@@ -31,6 +47,7 @@ export const initAuth = (
     } else {
       cachedAccessToken = null;
       localStorage.removeItem('google_sheets_access_token');
+      localStorage.removeItem('google_sheets_token_timestamp');
       if (onAuthFailure) onAuthFailure();
     }
   });
@@ -48,6 +65,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
 
     cachedAccessToken = credential.accessToken;
     localStorage.setItem('google_sheets_access_token', cachedAccessToken);
+    localStorage.setItem('google_sheets_token_timestamp', String(Date.now()));
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
     console.error('Sign in error:', error);
@@ -65,4 +83,5 @@ export const logout = async () => {
   await auth.signOut();
   cachedAccessToken = null;
   localStorage.removeItem('google_sheets_access_token');
+  localStorage.removeItem('google_sheets_token_timestamp');
 };

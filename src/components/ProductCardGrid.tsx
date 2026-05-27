@@ -412,23 +412,23 @@ export default function ProductCardGrid({
     <div className="flex flex-col gap-6">
       
       {/* Search, Filter categories and Header options area */}
-      <div className="bg-white border border-gray-150 rounded-2xl p-5 shadow-2xs flex flex-col gap-4">
+      <div className="bg-white border border-neutral-200/60 rounded-2xl p-5 shadow-xs flex flex-col gap-4">
         
         {/* Row 1: Search and Header Action buttons */}
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="relative flex-1 max-w-md">
-            <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-gray-400">
-              <Search size={16} />
+            <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center text-neutral-400">
+              <Search size={15} />
             </span>
             <input
               type="text"
-              placeholder="Fuzzy search products, descriptions, prices or codes..."
+              placeholder="Search products, descriptions, prices or codes..."
               value={searchTerm}
               onChange={(e) => {
                 setSearchTerm(e.target.value);
                 setCurrentPage(1);
               }}
-              className="pl-11 pr-4 py-2.5 bg-slate-50 border border-gray-200 focus:border-emerald-400 text-gray-800 placeholder-gray-400 text-xs font-medium rounded-xl outline-hidden w-full transition-all"
+              className="pl-10 pr-4 py-2 bg-neutral-50 border border-neutral-200 focus:border-neutral-900 text-neutral-800 placeholder-neutral-400 text-xs font-sans rounded-xl outline-hidden w-full transition-all focus:bg-white focus:ring-1 focus:ring-neutral-950/10"
             />
           </div>
 
@@ -436,37 +436,37 @@ export default function ProductCardGrid({
             {unsavedEditsCount > 0 && (
               <button
                 onClick={onUndoAll}
-                className="px-3.5 py-2.5 border border-amber-200 hover:border-amber-300 bg-amber-50/25 hover:bg-amber-50 text-amber-700 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
+                className="px-3 py-2 border border-emerald-200 hover:border-emerald-300 bg-emerald-50/20 text-emerald-800 rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                 title="Discard all pending changes made locally"
               >
-                <Undo2 size={13} />
+                <Undo2 size={12} />
                 <span>Discard Edits ({unsavedEditsCount})</span>
               </button>
             )}
 
             <button
               onClick={openCreateModal}
-              className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-2xs hover:shadow-xs transition-colors cursor-pointer"
+              className="px-4 py-2 bg-emerald-900 hover:bg-emerald-950 text-white rounded-xl text-xs font-semibold inline-flex items-center gap-1.5 shadow-xs transition-colors cursor-pointer"
             >
-              <Plus size={14} />
-              <span>Add New Product</span>
+              <Plus size={13} />
+              <span>Add Product</span>
             </button>
           </div>
         </div>
 
         {/* Row 2: Sort shortcuts and Headers row selection */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-gray-100 pt-4 text-xs text-gray-400">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-t border-neutral-100 pt-4 text-xs text-neutral-500">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-[10px] uppercase font-bold text-gray-400 tracking-wider flex items-center gap-1">
-              <SlidersHorizontal size={11} />
-              Sort options:
+            <span className="font-mono text-[9px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1">
+              <SlidersHorizontal size={11} className="text-neutral-400" />
+              Sort:
             </span>
             <button
               onClick={() => toggleSort(columnRoles.titleIdx)}
-              className={`px-2.5 py-1 rounded-md border font-medium transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg border font-medium text-xs transition-all cursor-pointer ${
                 sortByColIdx === columnRoles.titleIdx
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 font-semibold'
-                  : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600'
+                  ? 'bg-emerald-900 border-emerald-900 text-white font-semibold'
+                  : 'bg-white border-neutral-200 hover:border-neutral-350 text-neutral-600'
               }`}
             >
               Name {sortByColIdx === columnRoles.titleIdx && (sortDirection === 'asc' ? '↓' : '↑')}
@@ -475,10 +475,10 @@ export default function ProductCardGrid({
             {columnRoles.priceIdx !== -1 && (
               <button
                 onClick={() => toggleSort(columnRoles.priceIdx)}
-                className={`px-2.5 py-1 rounded-md border font-medium transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg border font-medium text-xs transition-all cursor-pointer ${
                   sortByColIdx === columnRoles.priceIdx
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 font-semibold'
-                    : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600'
+                    ? 'bg-emerald-900 border-emerald-900 text-white font-semibold'
+                    : 'bg-white border-neutral-200 hover:border-neutral-350 text-neutral-605'
                 }`}
               >
                 Price {sortByColIdx === columnRoles.priceIdx && (sortDirection === 'asc' ? '↓' : '↑')}
@@ -488,10 +488,10 @@ export default function ProductCardGrid({
             {columnRoles.stockIdx !== -1 && (
               <button
                 onClick={() => toggleSort(columnRoles.stockIdx)}
-                className={`px-2.5 py-1 rounded-md border font-medium transition-all cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg border font-medium text-xs transition-all cursor-pointer ${
                   sortByColIdx === columnRoles.stockIdx
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 font-semibold'
-                    : 'bg-white border-gray-200 hover:border-gray-300 text-gray-600'
+                    ? 'bg-emerald-900 border-emerald-900 text-white font-semibold'
+                    : 'bg-white border-neutral-200 hover:border-neutral-350 text-neutral-605'
                 }`}
               >
                 Stock {sortByColIdx === columnRoles.stockIdx && (sortDirection === 'asc' ? '↓' : '↑')}
@@ -504,17 +504,17 @@ export default function ProductCardGrid({
               type="checkbox"
               checked={hasHeadersRow}
               onChange={(e) => setHasHeadersRow(e.target.checked)}
-              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-gray-200"
+              className="w-3.5 h-3.5 rounded text-neutral-905 focus:ring-neutral-950 border-neutral-300"
             />
-            <span className="font-medium text-gray-500">First row represents attributes</span>
+            <span className="font-medium text-neutral-450 text-xs">First row specifies headers</span>
           </label>
         </div>
 
         {/* Row 3: Category filter chips */}
         {allCategories.length > 2 && (
-          <div className="flex items-center gap-1.5 border-t border-gray-100 pt-3 overflow-x-auto select-none no-scrollbar">
-            <span className="font-mono text-[10px] uppercase font-bold text-gray-400 tracking-wider flex items-center gap-1 flex-shrink-0">
-              <FolderOpen size={11} />
+          <div className="flex items-center gap-1.5 border-t border-neutral-100 pt-3 overflow-x-auto select-none no-scrollbar">
+            <span className="font-mono text-[9px] uppercase font-bold text-neutral-400 tracking-wider flex items-center gap-1 flex-shrink-0">
+              <FolderOpen size={11} className="text-neutral-400" />
               Categories:
             </span>
             <div className="flex items-center gap-1.5 py-0.5">
@@ -527,8 +527,8 @@ export default function ProductCardGrid({
                   }}
                   className={`px-3 py-1 rounded-full text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                     selectedCategory === cat
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-3xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-gray-600'
+                      ? 'bg-emerald-900 text-white shadow-xs'
+                      : 'bg-neutral-50 border border-neutral-200/50 hover:bg-neutral-100 text-neutral-600'
                   }`}
                 >
                   {cat}
