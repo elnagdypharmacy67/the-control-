@@ -31,56 +31,121 @@ interface OrderParserProps {
   showToast: (type: 'success' | 'error', text: string) => void;
 }
 
-// Arabic/English fuzzy matching & normalization helper
-const cleanText = (str: string): string => {
+// Arabic/English normalization and typing variations helper
+const normalizeArabicText = (str: string): string => {
   if (!str) return '';
   return str
     .toLowerCase()
-    // Remove formatting stars, parentheticals, common WhatsApp order extras
-    .replace(/[*()（）[\]]/g, '')
-    // Normalize common Arabic letters to match despite variations
-    .replace(/[أإآا]/g, 'ا')
-    .replace(/ى/g, 'ي')
+    .trim()
+    // Convert Eastern Arabic/Persian digits U+0660-U+0669 and U+06F0-U+06F9 to standard digits
+    .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+    .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+    // Normalize Arabic letters and hamzas:
+    .replace(/[أإآاٱ]/g, 'ا')
+    .replace(/[ىئ]/g, 'ي')
     .replace(/ة/g, 'ه')
-    // Remove extra non-alphanumeric chars but preserve letters & numbers
-    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-    .trim();
+    .replace(/ؤ/g, 'و')
+    .replace(/ڤ/g, 'ف')  // Map "veb" to "feh" for robust product cross-matching
+    // Remove Arabic diacritics (Harakat) & Kashida/Tatweel
+    .replace(/[\u064e\u064f\u0650\u0651\u0652\u064b\u064c\u064d\u0640]/g, '');
 };
 
 const matchProductRowIdx = (
   extractedName: string,
   rows: string[][],
   titleIdx: number,
+  arabicTitleIdx: number,
   hasHeadersRow: boolean
 ): number => {
   const startOffset = hasHeadersRow ? 1 : 0;
   if (!extractedName || rows.length <= startOffset) return -1;
 
-  const cleanExtracted = cleanText(extractedName);
-  const extractedWords = cleanExtracted.split(/\s+/).filter(Boolean);
+  const normExtracted = normalizeArabicText(extractedName);
+  const extractedWords = normExtracted.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  const squashExtracted = normExtracted.replace(/\s+/g, '');
+
   if (extractedWords.length === 0) return -1;
 
   let bestIdx = -1;
   let bestScore = 0;
 
+  const getLevenshteinDistance = (s1: string, s2: string): number => {
+    const costs: number[] = [];
+    for (let i = 0; i <= s1.length; i++) {
+      let lastValue = i;
+      for (let j = 0; j <= s2.length; j++) {
+        if (i === 0) {
+          costs[j] = j;
+        } else {
+          if (j > 0) {
+            let newValue = costs[j - 1];
+            if (s1.charAt(i - 1) !== s2.charAt(j - 1)) {
+              newValue = Math.min(Math.min(newValue, lastValue), costs[j]) + 1;
+            }
+            costs[j - 1] = lastValue;
+            lastValue = newValue;
+          }
+        }
+      }
+      if (i > 0) costs[s2.length] = lastValue;
+    }
+    return costs[s2.length];
+  };
+
   for (let i = startOffset; i < rows.length; i++) {
     const row = rows[i];
     const itemTitle = row[titleIdx] || '';
-    const cleanItem = cleanText(itemTitle);
-    const itemWords = cleanItem.split(/\s+/).filter(Boolean);
+    const itemTitleAr = arabicTitleIdx !== -1 ? row[arabicTitleIdx] || '' : '';
 
-    if (itemWords.length === 0) continue;
+    const calculateColScore = (itemTitleText: string): number => {
+      const normItem = normalizeArabicText(itemTitleText);
+      if (!normItem) return 0;
 
-    // Word intersection score
-    let matchedWordsCount = 0;
-    extractedWords.forEach((ew) => {
-      if (itemWords.includes(ew) || itemWords.some((iw) => iw.includes(ew) || ew.includes(iw))) {
-        matchedWordsCount++;
+      // Direct or squash match is perfect
+      if (normItem === normExtracted) {
+        return 1.0; // exact match
       }
-    });
 
-    // Score is fraction of matching words out of the larger word count
-    const score = matchedWordsCount / Math.max(extractedWords.length, itemWords.length);
+      const squashItem = normItem.replace(/\s+/g, '');
+      if (squashItem === squashExtracted) {
+        return 0.95; // exact match without spaces
+      }
+
+      const itemWords = normItem.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+      if (itemWords.length === 0) return 0;
+
+      // Word intersection and Levenshtein score
+      let matchedWordsCount = 0;
+      extractedWords.forEach((ew) => {
+        // Direct containment or low Levenshtein distance
+        if (
+          itemWords.includes(ew) ||
+          itemWords.some((iw) => {
+            if (iw.includes(ew) || ew.includes(iw)) return true;
+            const maxDist = Math.max(1, Math.floor(ew.length / 3));
+            return getLevenshteinDistance(iw, ew) <= maxDist;
+          })
+        ) {
+          matchedWordsCount++;
+        }
+      });
+
+      const wordsScore = matchedWordsCount / Math.max(extractedWords.length, itemWords.length);
+
+      // Squash-containment score as fallback
+      let squashScore = 0;
+      if (squashItem.includes(squashExtracted) || squashExtracted.includes(squashItem)) {
+        squashScore = Math.min(squashItem.length, squashExtracted.length) / Math.max(squashItem.length, squashExtracted.length);
+      }
+
+      return Math.max(wordsScore, squashScore);
+    };
+
+    const englishScore = calculateColScore(itemTitle);
+    const arabicScore = calculateColScore(itemTitleAr);
+
+    // Max score of either column is the row's matching score representer
+    const score = Math.max(englishScore, arabicScore);
 
     if (score > bestScore) {
       bestScore = score;
@@ -89,7 +154,7 @@ const matchProductRowIdx = (
   }
 
   // Acceptance threshold (match must share substantial lexical overlap)
-  return bestScore > 0.15 ? bestIdx : -1;
+  return bestScore > 0.25 ? bestIdx : -1;
 };
 
 export default function OrderParser({
@@ -112,22 +177,109 @@ export default function OrderParser({
 
   const hasStockColumn = columnRoles.stockIdx !== -1;
 
-  // Clear or load default example WhatsApp order ticket
-  const pasteExampleOrder = () => {
+  // Detect Arabic name/title column index dynamically
+  const arabicTitleIdx = useMemo(() => {
+    // Search in headers for candidate indicators
+    for (let idx = 0; idx < headers.length; idx++) {
+      const h = headers[idx] || '';
+      const name = h.toLowerCase();
+      if (idx !== columnRoles.titleIdx) {
+        if (
+          name.includes('arabic') ||
+          name.includes('عربي') ||
+          name.includes('عربى') ||
+          name.includes('الاسم بالكامل') ||
+          name.includes('اسم') ||
+          name.includes('أسم') ||
+          /[\u0600-\u06FF]/.test(h)
+        ) {
+          return idx;
+        }
+      }
+    }
+    // Fallback: check actual values of local rows to see which column has the most Arabic chars
+    const startOffset = hasHeadersRow ? 1 : 0;
+    if (catalogLocalRows.length > startOffset) {
+      const counts = Array(headers.length).fill(0);
+      const sampleSize = Math.min(30, catalogLocalRows.length - startOffset);
+      for (let rIdx = startOffset; rIdx < startOffset + sampleSize; rIdx++) {
+        const row = catalogLocalRows[rIdx];
+        if (!row) continue;
+        for (let cIdx = 0; cIdx < row.length; cIdx++) {
+          if (cIdx === columnRoles.titleIdx) continue;
+          const cell = row[cIdx] || '';
+          if (/[\u0600-\u06FF]/.test(cell)) {
+            counts[cIdx]++;
+          }
+        }
+      }
+      let maxIdx = -1;
+      let maxCount = 0;
+      for (let cIdx = 0; cIdx < counts.length; cIdx++) {
+        if (counts[cIdx] > maxCount) {
+          maxCount = counts[cIdx];
+          maxIdx = cIdx;
+        }
+      }
+      if (maxCount >= Math.ceil(sampleSize * 0.2)) {
+        return maxIdx;
+      }
+    }
+    return -1;
+  }, [headers, catalogLocalRows, columnRoles.titleIdx, hasHeadersRow]);
+
+  // Clear or load default example Arabic WhatsApp order ticket
+  const pasteArabicExampleOrder = () => {
     setInputText(`*طلب جديد من صيدلية النجدي*
 
-👤 *bbbb*
-📍 bbb
-🏢 jjj
+👤 *arcane plotter*
+📍 bsbsh
+🏢 hdbdbs
 
 -------------------
-1. *أ ڤيتون 50000* (x1)
-   19.00 EGP
+1. *سيتال* (x1)
+   12.00 EGP
+2. *أ ڤيتون 50000* (x1)
+   1999.00 EGP
+3. *أبيمول* (x1)
+   15.00 EGP
+4. *أتور 20* (x1)
+   56.00 EGP
+5. *أسبرين بروتكت 100* (x1)
+   35.00 EGP
+6. *أفرين* (x1)
+   25.00 EGP
+7. *ألداكتون 25* (x1)
+   33.00 EGP
 -------------------
 
-المجموع الفرعي: 19.05 EGP
-خدمة التوصيل: 10.00 EGP
-*الإجمالي: 29.00 EGP*`);
+المجموع الفرعي: 2175.00 EGP
+خدمة التوصيل: 66.00 EGP
+*الإجمالي: 2241.00 EGP*`);
+  };
+
+  // Clear or load default example English WhatsApp order ticket
+  const pasteEnglishExampleOrder = () => {
+    setInputText(`*New Order from El-Nagdy Pharmacy*
+
+👤 *bshhs*
+📍 ndns
+🏢 ndns
+
+-------------------
+1. *1 2 2003* (x1)
+   25.00 EGP
+2. *A-Viton 50000 I.U.* (x1)
+   1999.00 EGP
+3. *Abimol* (x1)
+   15.00 EGP
+4. *Aerius* (x1)
+   85.00 EGP
+-------------------
+
+Subtotal: 2124.00 EGP
+Delivery Fee: 66.00 EGP
+*Total: 2190.00 EGP*`);
   };
 
   const handleParseReceipt = () => {
@@ -151,28 +303,43 @@ export default function OrderParser({
           const trimmed = line.trim();
           if (!trimmed) return;
 
-          const lower = trimmed.toLowerCase();
+          // Normalize Eastern Arabic/Persian digits to standard Western ASCII digits first
+          const normalizedDigitsLine = trimmed
+            .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+            .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, (d) => String(d.charCodeAt(0) - 1776));
+
+          const lower = normalizedDigitsLine.toLowerCase();
           
           // Identify and exclude irrelevant metadata/header/footer content
           if (
             lower.includes('طلب جديد') ||
+            lower.includes('new order') ||
             lower.includes('صيدلية') ||
+            lower.includes('pharmacy') ||
             lower.includes('👤') ||
             lower.includes('📍') ||
             lower.includes('🏢') ||
             lower.includes('------') ||
             lower.includes('المجموع') ||
+            lower.includes('subtotal') ||
+            lower.includes('sub-total') ||
             lower.includes('التوصيل') ||
+            lower.includes('delivery') ||
             lower.includes('الإجمالي') ||
             lower.includes('الاجمالي') ||
-            (lower.includes('egp') && !lower.includes('(') && !lower.includes('*'))
+            lower.includes('total') ||
+            lower.includes('fee') ||
+            lower.includes('خدمه') ||
+            lower.includes('خدمة') ||
+            (lower.includes('egp') && !lower.includes('(') && !lower.includes('*')) ||
+            /^\s*\d+(?:\.\d+)?\s*(?:egp|egp\*|egp|le|l\.e\.)?\s*$/i.test(lower)
           ) {
             return;
           }
 
           // 1. Detect and parse quantity multiplier, e.g., (x1), (x 2), x3, (1)
           let quantity = 1;
-          let tempLine = trimmed;
+          let tempLine = normalizedDigitsLine;
 
           const qtyPatterns = [
             /\(\s*[xX]\s*(\d+)\s*\)/,    // (x1), (x 2)
@@ -223,6 +390,7 @@ export default function OrderParser({
             item.name,
             catalogLocalRows,
             columnRoles.titleIdx,
+            arabicTitleIdx,
             hasHeadersRow
           );
           return {
@@ -262,18 +430,23 @@ export default function OrderParser({
         .map((row, idx) => ({ row, actualIdx: idx + (hasHeadersRow ? 1 : 0) }))
         .slice(0, 10); // show top 10 if blank
     }
-    const cleanQuery = cleanText(manualSearchQuery);
+    const cleanQuery = normalizeArabicText(manualSearchQuery);
     return catalogLocalRows
       .slice(hasHeadersRow ? 1 : 0)
       .map((row, idx) => {
         const actualIdx = idx + (hasHeadersRow ? 1 : 0);
         const title = row[columnRoles.titleIdx] || '';
-        const score = cleanText(title).includes(cleanQuery) ? 2 : 0;
+        const arabicTitle = arabicTitleIdx !== -1 ? row[arabicTitleIdx] || '' : '';
+        
+        const engMatch = normalizeArabicText(title).includes(cleanQuery);
+        const arMatch = arabicTitle ? normalizeArabicText(arabicTitle).includes(cleanQuery) : false;
+        
+        const score = (engMatch || arMatch) ? 2 : 0;
         return { row, actualIdx, score };
       })
-      .filter((item) => item.score > 0 || cleanText(item.row.join(' ')).includes(cleanQuery))
+      .filter((item) => item.score > 0 || normalizeArabicText(item.row.join(' ')).includes(cleanQuery))
       .slice(0, 12);
-  }, [manualSearchQuery, catalogLocalRows, columnRoles.titleIdx, hasHeadersRow]);
+  }, [manualSearchQuery, catalogLocalRows, columnRoles.titleIdx, arabicTitleIdx, hasHeadersRow]);
 
   // Apply reductions directly to catalogLocalRows in React State
   const handleApplyReductions = () => {
@@ -329,13 +502,22 @@ export default function OrderParser({
           </p>
         </div>
 
-        <button
-          onClick={pasteExampleOrder}
-          className="self-start sm:self-center px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-[10px] font-bold rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
-        >
-          <Sparkles size={10} />
-          <span>Paste Pharmacy Sample</span>
-        </button>
+        <div className="flex flex-wrap gap-2 self-start sm:self-center">
+          <button
+            onClick={pasteArabicExampleOrder}
+            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-800 text-[10px] font-bold rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
+          >
+            <Sparkles size={10} className="text-emerald-600" />
+            <span>Paste Arabic Receipt</span>
+          </button>
+          <button
+            onClick={pasteEnglishExampleOrder}
+            className="px-2.5 py-1 bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-600 hover:text-slate-800 text-[10px] font-bold rounded-lg transition-colors inline-flex items-center gap-1 cursor-pointer"
+          >
+            <Sparkles size={10} />
+            <span>Paste English Receipt</span>
+          </button>
+        </div>
       </div>
 
       {/* Main Text Area Form */}

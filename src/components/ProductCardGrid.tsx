@@ -38,16 +38,43 @@ interface ProductCardGridProps {
   catalogSheetUrl?: string;
 }
 
-// Simple fuzzy string match helper that allows minor misspelling/typos
-const fuzzyMatch = (text: string, query: string): boolean => {
-  text = text.toLowerCase().trim();
-  query = query.toLowerCase().trim();
-  if (!query) return true;
-  if (!text) return false;
-  if (text.includes(query)) return true; // Direct substring match
+// Arabic/English normalization and typing variations helper
+const normalizeArabicText = (str: string): string => {
+  if (!str) return '';
+  return str
+    .toLowerCase()
+    .trim()
+    // Convert Eastern Arabic/Persian digits U+0660-U+0669 and U+06F0-U+06F9 to standard digits
+    .replace(/[٠١٢٣٤٥٦٧٨٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+    .replace(/[۰۱۲۳۴۵۶۷۸۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+    // Normalize Arabic letters and hamzas:
+    .replace(/[أإآاٱ]/g, 'ا')
+    .replace(/[ىئ]/g, 'ي')
+    .replace(/ة/g, 'ه')
+    .replace(/ؤ/g, 'و')
+    .replace(/ڤ/g, 'ف')  // Map "veb" to "feh", as they are highly interchangeable in pharmaceutical names
+    // Remove Arabic diacritics (Harakat) & Kashida/Tatweel
+    .replace(/[\u064e\u064f\u0650\u0651\u0652\u064b\u064c\u064d\u0640]/g, '');
+};
 
-  const words = text.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-  const queryWords = query.replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
+// Advanced fuzzy string match helper that supports Arabic normalization, spacing-squash fallback and Levenshtein distance
+const fuzzyMatch = (text: string, query: string): boolean => {
+  const normText = normalizeArabicText(text);
+  const normQuery = normalizeArabicText(query);
+  if (!normQuery) return true;
+  if (!normText) return false;
+
+  // 1. Direct normalized check or substring match
+  if (normText.includes(normQuery) || normQuery.includes(normText)) return true;
+
+  // 2. Space squashing fallback (e.g., matching "أ ڤيتون" with "أفيتون" or "panadol extra" with "panadolextra")
+  const squashText = normText.replace(/\s+/g, '');
+  const squashQuery = normQuery.replace(/\s+/g, '');
+  if (squashText.includes(squashQuery) || squashQuery.includes(squashText)) return true;
+
+  // 3. Multi-word fuzzy match via Levenshtein distance on clean word tokens
+  const words = normText.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
+  const queryWords = normQuery.replace(/[^\p{L}\p{N}\s]/gu, ' ').split(/\s+/).filter(Boolean);
   if (queryWords.length === 0) return true;
 
   const getLevenshteinDistance = (s1: string, s2: string): number => {
@@ -75,6 +102,7 @@ const fuzzyMatch = (text: string, query: string): boolean => {
 
   // Check if every word of query matches some word in text with low distance
   return queryWords.every(qw => {
+    // For tiny query words, require simple direct substring inclusion inside any target word
     if (qw.length <= 1) {
       return words.some(w => w.includes(qw));
     }
